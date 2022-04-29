@@ -1,0 +1,278 @@
+---
+title: "Tècniques Avançades en Mineria de Dades. Pràctica 1"
+output: html_notebook
+---
+
+## 1. Preparació del DataFrame
+
+Importar llibreries:
+```{r}
+library(rJava)
+library(foreign)
+library(rsubgroup)
+```
+
+### 1.1. Lectura del CSV
+
+Llegir el CSV amb la informació dels crims comesos a Los Ángeles:
+```{r}
+crimes = read.csv2("Crime_Data_from_2020_to_Present.csv", header = TRUE, sep = ",", stringsAsFactors = TRUE)
+```
+
+
+### 1.2. Neteja de dades
+
+Convertir columnes a factors, elegir intérvals per a columnes numèriques, fer conversions de format i crear noves columnes amb dades interessants a tenir en compte més tard:
+```{r}
+# Convertir columnes amb un id a factors
+factor_cols = c("Crm.Cd", "Crm.Cd.2", "Crm.Cd.3", "Crm.Cd.4", "Weapon.Used.Cd", "Rpt.Dist.No", "Premis.Cd")
+for(f in factor_cols){
+  crimes[[f]] = as.factor(crimes[[f]])
+}
+
+# Agafar hores de 4 en 4 i convertir a factor
+interval = 4
+hores = floor(floor(crimes$TIME.OCC/100)/interval)*interval
+for (h in seq(interval, 24, by=interval)){
+  hores[hores == h - interval] = paste((h-interval), "-", h)
+}
+crimes$TIME.OCC2 = as.factor(hores)
+
+# Edat de 10 en 10
+interval = 10
+edats = floor(crimes$Vict.Age/interval)*interval
+for (e in seq(interval, 70, by=interval)){
+  edats[edats == e - interval] = paste((e-interval), "-", e)
+}
+edats[edats > 60] = "+60"
+crimes$Vict.Age2 = as.factor(edats)
+
+# Columnes amb data
+data_cols = c("DATE.OCC", "Date.Rptd")
+for(f in data_cols){
+  crimes[[f]] = strptime(crimes[[f]], format = "%m/%d/%Y %H:%M:%S %p")
+}
+
+# Mes en què s'ha produït el crim
+crimes$Month.Occ = as.factor(strftime(crimes$DATE.OCC, format = "%B"))
+
+# Dia de la setmana en què s'ha produït el crim
+crimes$Weekday.Occ = as.factor(strftime(crimes$DATE.OCC, format = "%A"))
+
+# Dies que han passat des que es comet el crim fins que es reporta
+diff = as.integer(mapply(julian, crimes$Date.Rptd, crimes$DATE.OCC))
+diff_c = diff
+diff_c[diff > 365] = "more than 1 year"
+diff_c[diff <= 365] = "1 year"
+diff_c[diff <= 30] = "1 month"
+diff_c[diff <= 7] = "1 week"
+diff_c[diff <= 3] = "3 days"
+crimes$Diff.Occ.Rep = as.factor(diff_c)
+
+```
+
+<br>
+Elegir les columnes del nou dataframe i canviar els noms. 
+No s'utilitzen el tercer i quart crims comesos, degut a la seva poca freqüència (màxim 1000).
+```{r}
+crims = crimes[, c("Crm.Cd", "Crm.Cd.2",                                                # Crims
+                             "TIME.OCC2", "Month.Occ", "Weekday.Occ", "Diff.Occ.Rep",   # Hores i dates
+                             "AREA.NAME", "Rpt.Dist.No", "Premis.Desc",                 # Localització
+                             "Vict.Age2", "Vict.Sex", "Vict.Descent",                   # Víctima
+                             "Weapon.Desc", "Status"                                    # Altres
+                             )
+                         ]
+colnames(crims) <- c('Crim','Crim.2',                                                   # Crims
+                     "Hora", "Mes", "Dia.Setmana", "Dif.Oc.Rep",                        # Hores i dates
+                     "Area", "Districte", "Lloc",                                       # Localització
+                     "Vict.Edat", "Vict.Sexe", "Vict.Descent",                          # Víctima
+                     "Arma", "Estat"                                                    # Altres
+                     )
+```
+
+### 1.3. Visualització de dades
+
+Tipus de les columnes:
+```{r}
+str(crims)
+```
+
+<br>
+Primers crims del dataframe:
+```{r}
+head(crims)
+```
+
+#### Vista de diferents camps
+
+<br>
+Crims ordenats per freqüència:
+```{r}
+as.data.frame(sort(table(crimes$Crm.Cd.Desc), decreasing = TRUE))
+```
+
+<br>
+2n crim ordenat per freqüència:
+```{r}
+as.data.frame(sort(table(crimes$Crm.Cd.2), decreasing = TRUE))
+```
+
+<br>
+Àrees ordenades per freqüència:
+```{r}
+as.data.frame(sort(table(crimes$AREA.NAME), decreasing = TRUE))
+```
+
+
+<br>
+<br>
+
+## 2. Descobriment de subgrups
+
+### Funció DiscoverSubgroups
+
+* **method** (per defecte *sdmap*): 
+  - Beam-Search *beam*
+  - BSD *bsd*
+  - SD-Map *sdmap*
+  - SD-Map enabling internal disjunctions *sdmap-dis*
+  
+* **qf** (per defecte *ps*): 
+  - Adjusted Residuals *ares*
+  - Binomial Test *bin*
+  - Chi-Square Test *chi2*
+  - Gain *gain*
+  - Lift *lift*
+  - Piatetsky-Shapiro *ps*
+  - Relative Gain *relgain*
+  - Weighted Relative Accuracy *wracc*
+  
+
+
+### 2.1. Definició de la mètrica pròpia
+
+S'ha emprat la mètrica *** 
+```{r}
+
+```
+
+### 2.2. Cerca de subgrups, emprant diferents mètodes i mètriques
+
+Emprarem una mostra del dataframe per fer proves:
+```{r}
+set.seed(777)
+mostra = crims[sample(nrow(crims), 20000, replace = FALSE),]
+```
+
+
+Objectiu: Crim concret, robatori de cotxe, amb totes les columnes
+```{r}
+DiscoverSubgroups(mostra, as.target("Crim", "330"), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Crim", "330"), new ("SDTaskConfig", attributes=c("Area", "Hora")), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Estat", "AA"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Dif.Oc.Rep", "1 year"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Crim.2", "998"), new ("SDTaskConfig", attributes=c("Crim", "Arma")), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Hora", "0 - 4"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Area", "Central"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Lloc", "STREET"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```
+
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Lloc", "STREET"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Target: Crm.Cd -> Crm.Cd.2, Weapon.Used.Cd, TIME.OCC
+
+Atributs interessants:
+c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc","Weapon.Desc", "Status.Desc", "Crm.Cd.2")
+
+330: Robatori de cotxe
+110: Homicidi
+310: Burglary (robatori casa)
+
+```{r, time_it=TRUE}
+
+result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "330"), new ("SDTaskConfig", attributes=c("Crm.Cd.2", "Weapon.Used.Cd", "TIME.OCC")), as.df = TRUE)
+result
+```
+
+
+
+```{r, time_it=TRUE}
+prova = 3
+```
+`r prova`
+
+```{r, time_it=TRUE}
+
+result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "110"), new ("SDTaskConfig", attributes=c("Weapon.Desc")), as.df = TRUE)
+result
+```
+
+BURGLARY
+```{r, time_it=TRUE}
+
+result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "310"), new ("SDTaskConfig", attributes=c("AREA.NAME", "TIME.OCC")), as.df = TRUE)
+result
+```
+
+
+
+ROBATORI DE COTXE
+```{r, time_it=TRUE}
+
+result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "330"), new ("SDTaskConfig", attributes=c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc", "Status.Desc", "Crm.Cd.2")), as.df = TRUE)
+result
+```
+
+VIOLACIÓ
+```{r}
+result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "121"), new ("SDTaskConfig", attributes=c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc", "Status.Desc", "Crm.Cd.2","Weapon.Desc")), as.df = TRUE)
+result
+```
+
+
+Casos on s'ha detingut al culpable
+```{r}
+result = DiscoverSubgroups(crimes[1:20000,], as.target("Status", "AA"), new ("SDTaskConfig", attributes=c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc", "Crm.Cd.2","Weapon.Desc", "Crm.Cd")), as.df = TRUE)
+result
+```
+
