@@ -1,6 +1,8 @@
 ---
 title: "Tècniques Avançades en Mineria de Dades. Pràctica 1"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 ## 1. Preparació del DataFrame
@@ -66,7 +68,7 @@ diff_c[diff > 365] = "more than 1 year"
 diff_c[diff <= 365] = "1 year"
 diff_c[diff <= 30] = "1 month"
 diff_c[diff <= 7] = "1 week"
-diff_c[diff <= 3] = "3 days"
+diff_c[diff <= 0] = "same day"
 crimes$Diff.Occ.Rep = as.factor(diff_c)
 
 ```
@@ -123,6 +125,11 @@ as.data.frame(sort(table(crimes$Crm.Cd.2), decreasing = TRUE))
 as.data.frame(sort(table(crimes$AREA.NAME), decreasing = TRUE))
 ```
 
+<br>
+Armes ordenades per freqüència:
+```{r}
+as.data.frame(sort(table(crimes$Weapon.Desc), decreasing = TRUE))
+```
 
 <br>
 <br>
@@ -153,8 +160,56 @@ as.data.frame(sort(table(crimes$AREA.NAME), decreasing = TRUE))
 
 S'ha emprat la mètrica *** 
 ```{r}
-
+metrica_significacio <- function (df_crims, df_regles, target){
+  llista_target_values = unique(df_crims[,target])
+  for (regla_i in 1:nrow(df_regles)){
+    for (target_value_i in 1:nrow(llista_target_values)){
+      
+    }
+  }
+}
 ```
+
+```{r}
+n_condicions <- function (df_crims, regles){
+  n = 0
+  for (fila_i in nrow(df_crims)){
+    fila = df_crims[fila_i,]
+    
+    for (condicions in regles){
+      tot_true = TRUE
+      for (condicio in condicions){
+        print(as.character(fila[1, condicio[1]]))
+        print(condicio)
+        print("")
+        if (as.character(fila[1, condicio[1]]) != condicio[2]){
+          tot_true = FALSE
+          break
+        }
+      }
+      if (tot_true) {
+        n = n + 1
+      }
+    }
+  }
+}
+
+n_condicions(mostra, data.frame(list(c("Crim", "110"), 
+                                  c("Hora", "0 - 4"))))
+```
+
+```{r}
+a = list(list("Crim", "110"), 
+     list("Hora", "0 - 4"))
+
+for (i in 1:length(a)){
+  print(i)
+  print (a[i][1])
+  print (a[i][2])
+  print("")
+}
+```
+
 
 ### 2.2. Cerca de subgrups, emprant diferents mètodes i mètriques
 
@@ -164,115 +219,85 @@ set.seed(777)
 mostra = crims[sample(nrow(crims), 20000, replace = FALSE),]
 ```
 
-
-Objectiu: Crim concret, robatori de cotxe, amb totes les columnes
+#### Cerca #1
+Objectiu: Crim concret, robatori de cotxe, amb totes les columnes.
 ```{r}
 DiscoverSubgroups(mostra, as.target("Crim", "330"), as.df = TRUE)
 ```
+Conclusions: En general, si no s'ha emprat arma és un bon criteri per veure si s'ha produït un robatori de cotxe, ja que apareix a les principals regles trobades. És interessant apreciar que un 10% dels crims sense armes siguin aquest crim.
 
+#### Cerca #2
+Objectiu: veure si l'àrea i l'hora afecten al crim comès. Concretament, al robatori de cotxes, que és el més comú.
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Crim", "330"), new ("SDTaskConfig", attributes=c("Area", "Hora")), as.df = TRUE)
+DiscoverSubgroups(mostra, as.target("Crim", "330"), new ("SDTaskConfig", attributes=c("Area", "Hora"), method="bsd", qf="lift", minsize=500), as.df = TRUE)
 ```
+Conclusions: veim que un 11% dels delictes comesos a l'àrea central són robatoris de cotxes, i entre les vuit i les dotze de la nit el percentatge de robatoris de cotxes (en comparació a la resta de crims) és prou elevat: 10%.
 
+#### Cerca #3
+Objectiu: veure en quins casos s'ha empresonat al culpable.
 ```{r, time_it=TRUE}
 DiscoverSubgroups(mostra, as.target("Estat", "AA"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
 ```
+Conclusions: en un 14% dels casos en què s'ha reportat el crim el mateix dia que s'ha produït, es troba al culpable.
 
+#### Cerca #4
+Objectiu: Veure quan és que es tarda entre un mes i un any en reportar el crim, respecte a quan es produeix.
 ```{r, time_it=TRUE}
 DiscoverSubgroups(mostra, as.target("Dif.Oc.Rep", "1 year"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
 ```
+Veim, pels resultats obtinguts, que una quarta part dels robatoris d'identitat (crim nº 354) són reportats entre un mes i un any després d'haver sigut comesos. També es pot apreciar que el fet de no conèixer l'arma és indicatiu de que es tardarà més en reportar el crim.
 
+#### Cerca #5
+Objectiu: observar si el primer crim comès i l'arma emprada afecten al segon crim comès.
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Crim.2", "998"), new ("SDTaskConfig", attributes=c("Crim", "Arma")), as.df = TRUE)
+DiscoverSubgroups(mostra, as.target("Crim.2", "998"), new ("SDTaskConfig", attributes=c("Crim", "Arma"), method="beam", qf="relgain", minsize=500), as.df = TRUE)
+```
+Conclusions: els crims 210 (robatori), 230 (assalt amb arma letal), 310 (robatori a una casa), van molt probablement seguits del crim 998. D'aquest crim no en tenim la descripció, degut a que mai apareix com a primer crim al dataframe del que disposam. Tot i que hem intentat trobar-ho a la pàgina oficial, no hem trobat cap recopilació de codis de crims amb la seva descripció.
+
+#### Cerca #6
+Objectiu: veure que contribueix a que el crim sigui de vesprada (entre les dotze i les quatre de la matinada).
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Hora", "0 - 4"), new ("SDTaskConfig", attributes=c("Dia.Setmana", "Vict.Edat", "Vict.Sexe", "Vict.Descent", "Dif.Oc.Rep", "Arma")), as.df = TRUE)
+```
+D'entre els crims que es reporten el mateix dia, un 16% es produeixen entre les dotze i les quatre de la matinada. A més veim també que entre les regles apareixen, tot i que en una quantitat menor de dades, els dissabtes i diumenges com a dies de la setmana com a dies en què un més alt percentatge de crims a aquesta hora es produeixen. 
+
+De l'edat de la víctima es descarta la franja d'edat d'entre 0 i deu anys, que s'associa a una mala introducció de les dades, i ens podem quedar amb què si l'edat és de 20 a 30 anys, la probabilitat que es produeixi el crim a aquestes hores és més elevada.
+
+Per tant, traguent conclusions una mica abans d'hora, pareix que els joves de festa els caps de setmana són els que sofreixen més crims a aquestes hores. 
+
+#### Cerca #7
+Objectiu: veure què influeix més a l'hora que un crim es produeixi en una àrea concreta de la ciutat, concretament, a l'àrea Central. En aquest cas, deixam dues execucions diferentes del mètode DiscoverSubgroups, degut a que hem obtingut resultats molt diferents sols canviant la mètrica:
+```{r, time_it=TRUE}
+DiscoverSubgroups(mostra, as.target("Area", "Central"), new ("SDTaskConfig", attributes=NULL, method="sdmap", qf="chi2", minsize=500), as.df = TRUE)
 ```
 
-```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Hora", "0 - 4"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
-```
+Conclusions: les principals conclusions que en podem extreure emprant la mètrica chi2 són que si el delicte es comet a la vorera, es reporta el mateix dia o no es troba al culpable, la probabilitat que el crim es produeixi a l'àrea central és d'aproximadament un vint percent.
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Area", "Central"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+DiscoverSubgroups(mostra, as.target("Area", "Central"), new ("SDTaskConfig", attributes=NULL, method="sdmap", qf="ps", minsize=500), as.df = TRUE)
 ```
 
+Conclusions: emprant la mètrica per defecte, el vuit percent de crims on la víctima és un home, s'han produït a l'àrea central. També l'11 percent dels delictes on la víctima és de color, es produeixen en aquesta àrea. També trobam la regla sobre la vorera, que ja hem trobat emprant l'altra mètrica.
+
+En cap dels dos casos, els resultats obtinguts són molt concloents sobre quines regles ens permeten predir l'àrea on s'ha comès el delicte, ja que sols s'obtenen valors bastant genèrics per al sexe, la raça o el lloc del crim.
+
+#### Cerca #8
+Objectiu: observar els factors que més afecten per a que un crim es produeixi al carrer.
 ```{r, time_it=TRUE}
 DiscoverSubgroups(mostra, as.target("Lloc", "STREET"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
 ```
+Conclusions: pareix que el fet que no es gaudeixi de molta informació respecte del crim, com ara que no es sapi l'edat, el sexe o l'ascendència de la víctima o l'arma emprada, és un gran indicatiu de que s'hagi produït al carrer.
 
+Pensam que aquesta descripció és característica de crims on realment no hi ha cap víctima concreta, com actes de vandalisme cap a mobiliari urbà, que es solen produir al carrer.
+
+#### Cerca #9
+Objectiu: comprovar si es pot determinar que el crim és una violació (codi 121), a partir de característiques com l'arma emprada, l'hora, l'edat de la víctima, etc.
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Lloc", "STREET"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+DiscoverSubgroups(mostra, as.target("Crim", "121"), new ("SDTaskConfig", attributes=c("Vict.Sexe", "Vict.Edat", "Dif.Oc.Rep", "Arma", "Dia.Setmana", "Hora")), as.df = TRUE)
 ```
+Conclusions: els valors que apareixen a més regles són: la força física com a arma, que la víctima sigui femella, que el cas no estigui resolt (estat IC) i que s'hagi tardat entre un dia i una setmana a reportar el crim.
+
+Veim que aquestes dades són prou lògiques si ens aturam a pensar-les. Tot i així, els percentatges són prou baixos com per treure resultats concloents. Això és degut a que hi ha molta varietat de crims que cumpleixen aquesta classe d'antecedents.
 
 
-
-
-
-
-
-
-
-
-
-
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Target: Crm.Cd -> Crm.Cd.2, Weapon.Used.Cd, TIME.OCC
-
-Atributs interessants:
-c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc","Weapon.Desc", "Status.Desc", "Crm.Cd.2")
-
-330: Robatori de cotxe
-110: Homicidi
-310: Burglary (robatori casa)
-
-```{r, time_it=TRUE}
-
-result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "330"), new ("SDTaskConfig", attributes=c("Crm.Cd.2", "Weapon.Used.Cd", "TIME.OCC")), as.df = TRUE)
-result
-```
-
-
-
-```{r, time_it=TRUE}
-prova = 3
-```
-`r prova`
-
-```{r, time_it=TRUE}
-
-result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "110"), new ("SDTaskConfig", attributes=c("Weapon.Desc")), as.df = TRUE)
-result
-```
-
-BURGLARY
-```{r, time_it=TRUE}
-
-result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "310"), new ("SDTaskConfig", attributes=c("AREA.NAME", "TIME.OCC")), as.df = TRUE)
-result
-```
-
-
-
-ROBATORI DE COTXE
-```{r, time_it=TRUE}
-
-result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "330"), new ("SDTaskConfig", attributes=c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc", "Status.Desc", "Crm.Cd.2")), as.df = TRUE)
-result
-```
-
-VIOLACIÓ
-```{r}
-result = DiscoverSubgroups(crimes[1:20000,], as.target("Crm.Cd", "121"), new ("SDTaskConfig", attributes=c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc", "Status.Desc", "Crm.Cd.2","Weapon.Desc")), as.df = TRUE)
-result
-```
-
-
-Casos on s'ha detingut al culpable
-```{r}
-result = DiscoverSubgroups(crimes[1:20000,], as.target("Status", "AA"), new ("SDTaskConfig", attributes=c("TIME.OCC", "AREA.NAME", "Rpt.Dist.No", "Vict.Age", "Vict.Sex", "Vict.Descent", "Premis.Desc", "Crm.Cd.2","Weapon.Desc", "Crm.Cd")), as.df = TRUE)
-result
-```
-
+## 3. Conclusions finals
