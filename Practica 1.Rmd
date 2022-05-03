@@ -172,41 +172,63 @@ metrica_significacio <- function (df_crims, df_regles, target){
 
 ```{r}
 n_condicions <- function (df_crims, regles){
+  
   n = 0
-  for (fila_i in nrow(df_crims)){
-    fila = df_crims[fila_i,]
+  
+  for (fila_i in 1:nrow(df_crims)){
     
-    for (condicions in regles){
-      tot_true = TRUE
-      for (condicio in condicions){
-        print(as.character(fila[1, condicio[1]]))
-        print(condicio)
-        print("")
-        if (as.character(fila[1, condicio[1]]) != condicio[2]){
-          tot_true = FALSE
-          break
-        }
-      }
-      if (tot_true) {
-        n = n + 1
+    fila = df_crims[fila_i,]
+    tot_true = TRUE
+    
+    for (regla_i in 1:length(regles)){
+      
+      if (as.character(fila[1, regles[[regla_i]][[1]]]) != regles[[regla_i]][[2]]){
+        tot_true = FALSE
+        break
       }
     }
+    
+    if (tot_true) {
+      n = n + 1
+    }
   }
+  return(n)
 }
 
-n_condicions(mostra, data.frame(list(c("Crim", "110"), 
-                                  c("Hora", "0 - 4"))))
+n_condicions2 <- function (df_crims, regles){
+  
+  df_res = rep(TRUE, nrow(df_crims))
+
+  for (regla_i in 1:length(regles)){
+    df_res = "&"(df_res, df_crims[,regles[[regla_i]][[1]]] == regles[[regla_i]][[2]])
+  }
+  
+  return(sum(df_res, na.rm = TRUE))
+}
+
 ```
 
-```{r}
-a = list(list("Crim", "110"), 
-     list("Hora", "0 - 4"))
 
+```{r}
+n_condicions2(mostra, list(c("Dif.Oc.Rep", "1 week"), 
+                          c("Arma", ""), 
+                          c("Estat", "IC")))
+```
+```{r}
+sum(Reduce("&", mostra[,"Dif.Oc.Rep"] == "1 week", mostra[,"Arma"] == "", mostra[,"Estat"] == "IC"), na.rm = TRUE)
+```
+
+
+```{r}
+a = list(c("Crim", "110"), 
+     c("Hora", "0 - 4"))
+
+# b = list()
+# 
 for (i in 1:length(a)){
   print(i)
-  print (a[i][1])
-  print (a[i][2])
-  print("")
+  print (a[[i]][[1]])
+  print (a[[i]][[2]])
 }
 ```
 
