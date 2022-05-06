@@ -12,10 +12,12 @@ editor_options:
 
 Importar llibreries:
 
-```{r}
+```{r, warning=FALSE}
 library(rJava)
 library(foreign)
 library(rsubgroup)
+library(dplyr)
+library(stringr)
 ```
 
 ### 1.1. Lectura del CSV
@@ -153,16 +155,42 @@ set.seed(777)
 mostra = crims[sample(nrow(crims), 20000, replace = FALSE),]
 ```
 
-### 2.2. Definició de la mètrica pròpia
+### 2.2. Mètriques pròpies
 
-S'ha emprat la mètrica *significació*. A continuació es troba el codi
-emprat per al seu càlcul:
+S'han implementat les següents mètriques, d'acord amb la teoria vista a classe:
+
+* **Confiança**
+* **Cobriment**
+* **Suport**
+* **Novetat**
+* **Raresa**
+* **Piatetsky-Shapiro**
+* **Significació**
+
+A continuació es troba el codi emprat per al seu càlcul:
 
 ```{r}
 
+# Calcula les mètriques sobre un dataframe, un objectiu i unes regles
+avalua_metriques <- function(df_crims, df_resultats, target, nomes_noves=FALSE){
+  
+  if(!nomes_noves){
+    df_resultats = afegeix_metrica(df_crims, df_resultats, target, size, "size") 
+    df_resultats = afegeix_metrica(df_crims, df_resultats, target, p, "p") 
+    df_resultats = afegeix_metrica(df_crims, df_resultats, target, ps, "ps") 
+  }
+  
+  df_resultats = afegeix_metrica(df_crims, df_resultats, target, significacio, "significacio")
+  df_resultats = afegeix_metrica(df_crims, df_resultats, target, raresa, "raresa")
+  df_resultats = afegeix_metrica(df_crims, df_resultats, target, suport, "suport")
+  df_resultats = afegeix_metrica(df_crims, df_resultats, target, cobriment, "cobriment")
+  
+  return(df_resultats)
+}
+
 # Retorna el dataframe de resultats del descobriment de grups, però afegint una 
 # columna al principi, amb la mètrica desitjada calculada per a cada fila
-afegeix_metrica <- function (df_crims, df_resultat, target, metrica=significacio, nom_metrica="significacio"){
+afegeix_metrica <- function (df_crims, df_resultat, target, metrica, nom_metrica){
   
   # Definim la columna amb zeros per defecte
   res_metrica = rep(0, nrow(df_resultat))
@@ -170,7 +198,10 @@ afegeix_metrica <- function (df_crims, df_resultat, target, metrica=significacio
   # Per a cada fila, obtenim el conjunt de regles i calculam el valor de la mètrica
   for(i in 1:nrow(df_resultat)){
     regles = get_regles(df_resultat, i)
-    res_metrica[i] = metrica(df_crims, regles, target)
+    if(is.null(regles))
+      res_metrica[i] = 0
+    else
+      res_metrica[i] = metrica(df_crims, regles, target)
   }
   
   # Afegim la columna al dataframe
@@ -182,9 +213,21 @@ afegeix_metrica <- function (df_crims, df_resultat, target, metrica=significacio
 
 # Retorna una llista de tuples (condició, valor), agafades de la descripció dels resultats
 get_regles <- function(df_resultat, fila_n){
-
-  # Tallam la cadena a les comes, per aconseguir les diferents condicions
-  condicions = strsplit(df_resultat$description[fila_n], ", ")[[1]]
+  
+  # Localitzar i substituir patrons del tipus ", paraula1.paraula2=", i canviar la coma per punt i coma
+  # Necessari quan el valor de l'atribut conté valors separats per comes (per exemple )
+  text_regles = df_resultat$description[fila_n]
+  
+  if(text_regles == "")
+    return(NULL)
+  
+  pos = gregexpr(pattern = ", [[:alnum:].]+=", text = text_regles)
+  for(i in pos[[1]])
+    if(i > 1)
+      substr(text_regles, i, i) = ";"
+  
+  # Tallam la cadena als punts i coma, per aconseguir les diferents condicions
+  condicions = strsplit(text_regles, "; ")[[1]]
   regles = list()
   
   # Per a cada condició
@@ -204,11 +247,63 @@ get_regles <- function(df_resultat, fila_n){
   return(regles)
 }
 
-# Calcula la mètrica significació per a un dataframe, donada una llista de regles i una variable objectiu.
+# Calcula el nombre de files que cumpleixen una llista de regles.
 # regles serà una llista de tuples (condició, valor)
+n_condicions <- function (df_crims, regles){
+  
+  # cream un vector de valors TRUE del mateix tamany que el nombre de files del dataframe
+  df_res = rep(TRUE, nrow(df_crims))
+  
+  # Per a cada regla, comprovam quines files agafen el valor donat per a una condició donada.
+  # El resultat s'aplica en forma de AND lògica al vector df_res
+  for (regla_i in 1:length(regles)){
+    df_res = "&"(df_res, df_crims[,regles[[regla_i]][[1]]] == regles[[regla_i]][[2]])
+  }
+  
+  # Retornam el nombre de TRUES al vector resultat
+  return(sum(df_res, na.rm = TRUE))
+}
+
+# Calcula la confiança
+p <- function(df_crims, regles, target) {
+  return(n_condicions(df_crims, append(regles, list(target))) / n_condicions(df_crims, regles))
+}
+
+# Calcula el nombre de files que compleixen les regles
+size <- function(df_crims, regles, target) {
+  return(n_condicions(df_crims, regles))
+}
+
+# Calcula el cobriment
+cobriment <- function(df_crims, regles, target) {
+  return(n_condicions(df_crims, regles) / nrow(df_crims))
+}
+
+# Calcula el suport
+suport <- function(df_crims, regles, target) {
+  return(n_condicions(df_crims, append(regles, list(target))) / nrow(df_crims))
+}
+
+# Calcula la mètrica Piatetsky-Shapiro
+ps <- function(df_crims, regles, target) {
+  return(n_condicions(df_crims, append(regles, list(target))) - n_condicions(df_crims, list(target)) * (n_condicions(df_crims, regles) / nrow(df_crims)))
+}
+
+# Calcula la novetat
+novetat <- function(df_crims, regles, target) {
+  return(n_condicions(df_crims, append(regles, list(target))) - n_condicions(df_crims, list(target)) * n_condicions(df_crims, regles))
+}
+
+# Calcula la raresa
+raresa <- function(df_crims, regles, target) {
+  n_cond = n_condicions(df_crims, regles)
+  return((n_cond / nrow(df_crims)) * (n_condicions(df_crims, append(regles, list(target))) / n_cond - n_condicions(df_crims, list(target)) / nrow(df_crims)))
+}
+
+# Calcula la significació
 significacio <- function (df_crims, regles, target){
   
-  target_values = as.character(unique(df_crims[,target])) # llista de valors que pren la variable objectiu
+  target_values = as.character(unique(df_crims[,target[1]])) # llista de valors que pren la variable objectiu
   n_c = length(target_values) # nombre de valors que pren la variable objectiu
   n_s = nrow(df_crims) # nombre d'exemples totals (files)
   p_cond = n_condicions(df_crims, regles) / n_s # p(cond), definit com a la teoria,
@@ -231,23 +326,6 @@ significacio <- function (df_crims, regles, target){
   return(2*total)
 }
 
-# Calcula el nombre de files que cumpleixen una llista de regles.
-# regles serà una llista de tuples (condició, valor)
-n_condicions <- function (df_crims, regles){
-  
-  # cream un vector de valors TRUE del mateix tamany que el nombre de files del dataframe
-  df_res = rep(TRUE, nrow(df_crims))
-  
-  # Per a cada regla, comprovam quines files agafen el valor donat per a una condició donada.
-  # El resultat s'aplica en forma de AND lògica al vector df_res
-  for (regla_i in 1:length(regles)){
-    df_res = "&"(df_res, df_crims[,regles[[regla_i]][[1]]] == regles[[regla_i]][[2]])
-  }
-  
-  # Retornam el nombre de TRUES al vector resultat
-  return(sum(df_res, na.rm = TRUE))
-}
-
 ```
 
 #### Comprovacions de funcionament
@@ -256,7 +334,14 @@ Exemple de funcionament del codi:
 
 ```{r}
 prova = DiscoverSubgroups(mostra, as.target("Crim", "330"), as.df = TRUE)
-afegeix_metrica(mostra, prova, "Crim", significacio, "significacio")
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), significacio, "significacio")
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), raresa, "raresa") 
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), novetat, "novetat") 
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), suport, "suport") 
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), cobriment, "cobriment") 
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), p, "p2") # Toca donar el mateix que la columna p
+prova = afegeix_metrica(mostra, prova, c("Crim", "330"), size, "size2") # Toca donar el mateix que la columna size
+prova
 ```
 
 Es pot comprovar que les funcions auxiliars funcionen correctament:
@@ -269,6 +354,7 @@ n_condicions(mostra, list(c("Dif.Oc.Rep", "1 week"), c("Arma", ""), c("Estat", "
 # valor de la mètrica per a les regles y la variable objectiu donades (regles agafades també de la segona fila)
 significacio(mostra, list(c("Dif.Oc.Rep", "1 week"), c("Arma", ""), c("Estat", "IC")), "Crim")
 ```
+**Nota:** s'evitarà l'ús de la mètrica *novetat* degut a que provoca nombres exessivament grans, que provoquen overflow.
 
 ### 2.3. Cerca de subgrups, emprant diferents mètodes i mètriques
 
@@ -293,51 +379,85 @@ i la funció de qualitat a emprar:
     -   Relative Gain *relgain*
     -   Weighted Relative Accuracy *wracc*
 
+<br>
+
 #### Cerca #1
 
-Objectiu: Crim concret, robatori de cotxe, amb totes les columnes.
+**Objectiu**: Crim concret, robatori de cotxe, amb totes les columnes.
 
 ```{r}
-DiscoverSubgroups(mostra, as.target("Crim", "330"), as.df = TRUE)
+target = c("Crim", "330")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-Conclusions: En general, si no s'ha emprat arma és un bon criteri per
+**Conclusions**: En general, si no s'ha emprat arma és un bon criteri per
 veure si s'ha produït un robatori de cotxe, ja que apareix a les
 principals regles trobades. És interessant apreciar que un 10% dels
 crims sense armes siguin aquest crim.
 
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
+
 #### Cerca #2
 
-Objectiu: veure si l'àrea i l'hora afecten al crim comès. Concretament,
+**Objectiu**: veure si l'àrea i l'hora afecten al crim comès. Concretament,
 al robatori de cotxes, que és el més comú.
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Crim", "330"), new ("SDTaskConfig", attributes=c("Area", "Hora"), method="bsd", qf="lift", minsize=500), as.df = TRUE)
+target = c("Crim", "330")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=c("Area", "Hora"), method="bsd", qf="lift", minsize=500), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-Conclusions: veim que un 11% dels delictes comesos a l'àrea central són
+**Conclusions**: veim que un 11% dels delictes comesos a l'àrea central són
 robatoris de cotxes, i entre les vuit i les dotze de la nit el
 percentatge de robatoris de cotxes (en comparació a la resta de crims)
 és prou elevat: 10%.
 
-#### Cerca #3
-
-Objectiu: veure en quins casos s'ha empresonat al culpable.
-
-```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Estat", "AA"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
 
-Conclusions: en un 14% dels casos en què s'ha reportat el crim el mateix
+**Generalització**:
+
+<br>
+
+#### Cerca #3
+
+**Objectiu**: veure en quins casos s'ha empresonat al culpable.
+
+```{r, time_it=TRUE}
+target = c("Estat", "AA")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
+```
+
+**Conclusions**: en un 14% dels casos en què s'ha reportat el crim el mateix
 dia que s'ha produït, es troba al culpable.
+
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
 
 #### Cerca #4
 
-Objectiu: Veure quan és que es tarda entre un mes i un any en reportar
+**Objectiu**: Veure quan és que es tarda entre un mes i un any en reportar
 el crim, respecte a quan es produeix.
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Dif.Oc.Rep", "1 year"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+target = c("Dif.Oc.Rep", "1 year")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
 Veim, pels resultats obtinguts, que una quarta part dels robatoris
@@ -345,32 +465,52 @@ d'identitat (crim nº 354) són reportats entre un mes i un any després
 d'haver sigut comesos. També es pot apreciar que el fet de no conèixer
 l'arma és indicatiu de que es tardarà més en reportar el crim.
 
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
+
 #### Cerca #5
 
-Objectiu: observar si el primer crim comès i l'arma emprada afecten al
+**Objectiu**: observar si el primer crim comès i l'arma emprada afecten al
 segon crim comès.
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Crim.2", "998"), new ("SDTaskConfig", attributes=c("Crim", "Arma"), method="beam", qf="relgain", minsize=500), as.df = TRUE)
+target = c("Crim.2", "998")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=c("Crim", "Arma"), method="beam", qf="relgain", minsize=500), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-Conclusions: els crims 210 (robatori), 230 (assalt amb arma letal), 310
+**Conclusions**: els crims 210 (robatori), 230 (assalt amb arma letal), 310
 (robatori a una casa), van molt probablement seguits del crim 998.
 D'aquest crim no en tenim la descripció, degut a que mai apareix com a
 primer crim al dataframe del que disposam. Tot i que hem intentat
 trobar-ho a la pàgina oficial, no hem trobat cap recopilació de codis de
 crims amb la seva descripció.
 
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
+
 #### Cerca #6
 
-Objectiu: veure que contribueix a que el crim sigui de vesprada (entre
+**Objectiu**: veure que contribueix a que el crim sigui de vesprada (entre
 les dotze i les quatre de la matinada).
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Hora", "0 - 4"), new ("SDTaskConfig", attributes=c("Dia.Setmana", "Vict.Edat", "Vict.Sexe", "Vict.Descent", "Dif.Oc.Rep", "Arma")), as.df = TRUE)
+target = c("Hora", "0 - 4")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=c("Dia.Setmana", "Vict.Edat", "Vict.Sexe", "Vict.Descent", "Dif.Oc.Rep", "Arma")), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-D'entre els crims que es reporten el mateix dia, un 16% es produeixen
+**Conclusions**: D'entre els crims que es reporten el mateix dia, un 16% es produeixen
 entre les dotze i les quatre de la matinada. A més veim també que entre
 les regles apareixen, tot i que en una quantitat menor de dades, els
 dissabtes i diumenges com a dies de la setmana com a dies en què un més
@@ -385,19 +525,29 @@ Per tant, traguent conclusions una mica abans d'hora, pareix que els
 joves de festa els caps de setmana són els que sofreixen més crims a
 aquestes hores.
 
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
+
 #### Cerca #7
 
-Objectiu: veure què influeix més a l'hora que un crim es produeixi en
+**Objectiu**: veure què influeix més a l'hora que un crim es produeixi en
 una àrea concreta de la ciutat, concretament, a l'àrea Central. En
 aquest cas, deixam dues execucions diferentes del mètode
 DiscoverSubgroups, degut a que hem obtingut resultats molt diferents
 sols canviant la mètrica:
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Area", "Central"), new ("SDTaskConfig", attributes=NULL, method="sdmap", qf="chi2", minsize=500), as.df = TRUE)
+target = c("Area", "Central")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=NULL, method="sdmap", qf="chi2", minsize=500), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-Conclusions: les principals conclusions que en podem extreure emprant la
+**Conclusions**: les principals conclusions que en podem extreure emprant la
 mètrica chi2 són que si el delicte es comet a la vorera, es reporta el
 mateix dia o no es troba al culpable, la probabilitat que el crim es
 produeixi a l'àrea central és d'aproximadament un vint percent.
@@ -406,7 +556,7 @@ produeixi a l'àrea central és d'aproximadament un vint percent.
 DiscoverSubgroups(mostra, as.target("Area", "Central"), new ("SDTaskConfig", attributes=NULL, method="sdmap", qf="ps", minsize=500), as.df = TRUE)
 ```
 
-Conclusions: emprant la mètrica per defecte, el vuit percent de crims on
+**Conclusions**: emprant la mètrica per defecte, el vuit percent de crims on
 la víctima és un home, s'han produït a l'àrea central. També l'11
 percent dels delictes on la víctima és de color, es produeixen en
 aquesta àrea. També trobam la regla sobre la vorera, que ja hem trobat
@@ -415,18 +565,23 @@ emprant l'altra mètrica.
 En cap dels dos casos, els resultats obtinguts són molt concloents sobre
 quines regles ens permeten predir l'àrea on s'ha comès el delicte, ja
 que sols s'obtenen valors bastant genèrics per al sexe, la raça o el
-lloc del crim.
+lloc del crim. Per aquest motiu, ja no es passa a mirar si els resultats són 
+generalitzables.
+
+<br>
 
 #### Cerca #8
 
-Objectiu: observar els factors que més afecten per a que un crim es
+**Objectiu**: observar els factors que més afecten per a que un crim es
 produeixi al carrer.
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Lloc", "STREET"), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+target = c("Lloc", "STREET")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=NULL), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-Conclusions: pareix que el fet que no es gaudeixi de molta informació
+**Conclusions**: pareix que el fet que no es gaudeixi de molta informació
 respecte del crim, com ara que no es sapi l'edat, el sexe o
 l'ascendència de la víctima o l'arma emprada, és un gran indicatiu de
 que s'hagi produït al carrer.
@@ -435,17 +590,27 @@ Pensam que aquesta descripció és característica de crims on realment no
 hi ha cap víctima concreta, com actes de vandalisme cap a mobiliari
 urbà, que es solen produir al carrer.
 
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
+
 #### Cerca #9
 
-Objectiu: comprovar si es pot determinar que el crim és una violació
+**Objectiu**: comprovar si es pot determinar que el crim és una violació
 (codi 121), a partir de característiques com l'arma emprada, l'hora,
 l'edat de la víctima, etc.
 
 ```{r, time_it=TRUE}
-DiscoverSubgroups(mostra, as.target("Crim", "121"), new ("SDTaskConfig", attributes=c("Vict.Sexe", "Vict.Edat", "Dif.Oc.Rep", "Arma", "Dia.Setmana", "Hora")), as.df = TRUE)
+target = c("Crim", "121")
+df_resultats = DiscoverSubgroups(mostra, as.target(target[1], target[2]), new ("SDTaskConfig", attributes=c("Vict.Sexe", "Vict.Edat", "Dif.Oc.Rep", "Arma", "Dia.Setmana", "Hora")), as.df = TRUE)
+avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 ```
 
-Conclusions: els valors que apareixen a més regles són: la força física
+**Conclusions**: els valors que apareixen a més regles són: la força física
 com a arma, que la víctima sigui femella, que el cas no estigui resolt
 (estat IC) i que s'hagi tardat entre un dia i una setmana a reportar el
 crim.
@@ -454,5 +619,13 @@ Veim que aquestes dades són prou lògiques si ens aturam a pensar-les.
 Tot i així, els percentatges són prou baixos com per treure resultats
 concloents. Això és degut a que hi ha molta varietat de crims que
 cumpleixen aquesta classe d'antecedents.
+
+```{r}
+avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
+```
+
+**Generalització**:
+
+<br>
 
 ## 3. Conclusions finals
