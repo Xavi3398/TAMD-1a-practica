@@ -1,5 +1,8 @@
 ---
 title: "Tècniques Avançades en Mineria de Dades. Pràctica 1"
+author:
+  - Víctor Rubert Alfonso
+  - Francesc Xavier Gayà Morey
 output:
   html_notebook:
     df_print: paged
@@ -104,19 +107,19 @@ colnames(crims) <- c('Crim','Crim.2',                                           
 
 ### 1.3. Visualització de dades
 
-Tipus de les columnes:
+#### 1.3.1. Tipus de les columnes:
 
 ```{r}
 str(crims)
 ```
 
-<br> Primers crims del dataframe:
+#### 1.3.2. Primers crims del dataframe:
 
 ```{r}
 head(crims)
 ```
 
-#### Vista de diferents camps
+#### 1.3.3. Vista de diferents camps
 
 <br> Crims ordenats per freqüència:
 
@@ -396,12 +399,10 @@ veure si s'ha produït un robatori de cotxe, ja que apareix a les
 principals regles trobades. És interessant apreciar que un 10% dels
 crims sense armes siguin aquest crim.
 
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
-
 <br>
 
 #### Cerca #2
@@ -420,12 +421,10 @@ robatoris de cotxes, i entre les vuit i les dotze de la nit el
 percentatge de robatoris de cotxes (en comparació a la resta de crims)
 és prou elevat: 10%.
 
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
-
 <br>
 
 #### Cerca #3
@@ -441,12 +440,10 @@ avalua_metriques(mostra, df_resultats, target, nomes_noves = TRUE)
 **Conclusions**: en un 14% dels casos en què s'ha reportat el crim el mateix
 dia que s'ha produït, es troba al culpable.
 
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
-
 <br>
 
 #### Cerca #4
@@ -465,12 +462,10 @@ d'identitat (crim nº 354) són reportats entre un mes i un any després
 d'haver sigut comesos. També es pot apreciar que el fet de no conèixer
 l'arma és indicatiu de que es tardarà més en reportar el crim.
 
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
-
 <br>
 
 #### Cerca #5
@@ -491,12 +486,11 @@ primer crim al dataframe del que disposam. Tot i que hem intentat
 trobar-ho a la pàgina oficial, no hem trobat cap recopilació de codis de
 crims amb la seva descripció.
 
+
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
-
 <br>
 
 #### Cerca #6
@@ -525,12 +519,10 @@ Per tant, traguent conclusions una mica abans d'hora, pareix que els
 joves de festa els caps de setmana són els que sofreixen més crims a
 aquestes hores.
 
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
-
 <br>
 
 #### Cerca #7
@@ -590,11 +582,10 @@ Pensam que aquesta descripció és característica de crims on realment no
 hi ha cap víctima concreta, com actes de vandalisme cap a mobiliari
 urbà, que es solen produir al carrer.
 
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
-
-**Generalització**:
 
 <br>
 
@@ -620,12 +611,60 @@ Tot i així, els percentatges són prou baixos com per treure resultats
 concloents. Això és degut a que hi ha molta varietat de crims que
 cumpleixen aquesta classe d'antecedents.
 
+
+**Avaluació de les mètriques sobre tot el dataset**:
 ```{r}
 avalua_metriques(crims, df_resultats["description"], target, nomes_noves = FALSE)
 ```
 
-**Generalització**:
-
 <br>
 
 ## 3. Conclusions finals
+
+### 3.1. Mètodes i mesures de qualitat emprats
+D'entre tots els mètodes que ofereix la funció de DiscoverSubgroups, els hem provat tots: Beam-Search, SD-Map, BSD i SD-Map amb disjuncions internes. D'ells, l'SD-Map no l'hem arribat a executar completament damunt la mostra, degut a una durada massa llarga del temps d'execució. De la resta de mètodes, hem provat d'emprar-los damunt les mateixes dades, sense apreciar diferències notables a les regles obtingudes.
+
+Pel que fa a les mesures de qualitat, n'hem provat algunes de les disponibles: Piatetsky-Shapiro, Lift, Relative Gain i Chi-Square. La diferència en canviar de mètrica es bastant notable, ja que canvien les regles obtingudes. Així, per exemple, la mètrica Chi-Square torna, a la cerca 7, com a millor regla, una amb p aproximadament zero.
+
+### 3.2. Variables objectiu
+Hem elegit les variables objectiu de les cerques basant-nos en les taules de freqüències calculades prèviament (crim, segon crim, àrea i arma). També hem agafat valors objectiu que hem trobat que poguessin ser interessants. Aquestes han sigut:
+
+* Crim concret, amb valors 330 (robatori de cotxe) i 121 (violació).
+* Estat, amb valor AA (adult detingut).
+* Diferència en dies entre que es produeix el crim i es denuncia, amb valor entre un mes i un any.
+* Crim 2, amb valor 998 (el més freqüent).
+* Hora, amb valor entre les dotze i les quatre de la matinada.
+* Àrea, amb valor "Central".
+* Lloc, amb valor "STREET".
+
+### 3.3. Generalització i mostra emprada
+Totes les cerques (o execucions del DiscoverSubgroups) s'han fet sobre una mostra de 20.000 files agafades aleatòriament del dataset original, per tal de reduir el temps consumit per cada cerca. Un cop obtingudes les regles per a cada cerca, les hem avaluat amb les mètriques pròpies sobre el dataset complet. 
+
+Hem pogut apreciar que les regles s'adeqüen bé a tot el dataset, aconseguint valors similars per a les diferents mètriques. Òbviament, mètriques com el nombre de positius o la significància, que depenen del nombre de mostres en valors absouluts, augmentaran quan ho faci el tamany de la mostra emprada.
+
+### 3.4. Utitlitat de la tècnica per al tipus de dataset
+Arribats a aquest punt, concloem que el tipus de tècnica tal volta no és el més adequat per al dataset sobre el que s'ha fet l'estudi. Això és degut a que hi ha molta diversitat a les dades: amb la mateixa arma es poden cometre molts crims diferents, un crim es pot produir a diferents hores i llocs, i la correlació entre variables pareix a ser una mica baixa.
+
+Amb tot, no s'han aconseguit treure conclusions molt genèriques, sino més bé prou específiques per a un valor concret, d'una variable concreta. Tot i així, ha servit per posar en pràctica aquest tipus de tècnica, en un cas d'aplicació real.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
